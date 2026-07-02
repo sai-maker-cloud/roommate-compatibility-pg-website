@@ -9,12 +9,18 @@ export const bookPG = async ({ pgId, moveInDate }) => {
   };
 };
 
-export const acceptBooking = async (id) => {
-  const { data } = await apiClient.put(`/api/bookings/accept/${id}`);
+export const acceptBooking = async (id, status = "accepted") => {
+  const { data } = await apiClient.put(`/api/bookings/accept/${id}`, { status });
   return normalizeBooking(data);
 };
 
 export const getOwnerBookings = async () => {
+  const { data } = await apiClient.get("/api/bookings/owner");
+  return data.map(normalizeBooking);
+};
+
+export const getUserBookings = async () => {
   const { data } = await apiClient.get("/api/bookings");
   return data.map(normalizeBooking);
 };
+

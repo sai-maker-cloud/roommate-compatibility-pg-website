@@ -5,6 +5,7 @@ import { bookPG } from "../../api/bookings.js";
 import { getApiError } from "../../api/client.js";
 import { getMatches } from "../../api/matches.js";
 import { getPGsByOwner } from "../../api/pg.js";
+import { getOrCreateConversation } from "../../api/conversations.js";
 import { Button } from "../../components/ui/Button.jsx";
 import { Card } from "../../components/ui/Card.jsx";
 import { EmptyState } from "../../components/ui/EmptyState.jsx";
@@ -32,7 +33,9 @@ const MatchPgCard = ({ pg }) => {
   return (
     <div className="rounded-lg border border-stone-200 bg-stone-50 p-4">
       {pg.images?.[0] && (
-        <img src={pg.images[0]} alt={pg.name} className="mb-3 h-32 w-full rounded-md object-cover" />
+        <div className="mb-3 h-32 w-full rounded-md bg-stone-100 flex items-center justify-center p-1">
+          <img src={pg.images[0]} alt={pg.name} className="h-full w-full object-contain rounded-md" />
+        </div>
       )}
       <div className="flex items-start justify-between gap-2">
         <div>
@@ -150,6 +153,15 @@ export const MatchesPage = () => {
 
   useEffect(() => { load(); }, [load]);
 
+  const handleChat = async (userId) => {
+    try {
+      const conv = await getOrCreateConversation(userId);
+      navigate('/chat', { state: { conversationId: conv._id } });
+    } catch (err) {
+      setError("Failed to start chat session");
+    }
+  };
+
   return (
     <div>
       {pgDrawer && <PgDrawer match={pgDrawer} onClose={() => setPgDrawer(null)} />}
@@ -213,7 +225,7 @@ export const MatchesPage = () => {
               <div className="mt-5 grid grid-cols-2 gap-2">
                 <Button
                   variant="secondary"
-                  onClick={() => navigate(`/chat?receiver=${match.userId}`)}
+                  onClick={() => handleChat(match.userId)}
                 >
                   <MessageCircle className="h-4 w-4" />
                   Chat

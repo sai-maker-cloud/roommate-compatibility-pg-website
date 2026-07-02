@@ -39,7 +39,12 @@ const userSchema=new mongoose.Schema({
 
     personality:String
     },
-    vector:[Number]
+    vector:[Number],
+    role: {
+        type: String,
+        enum: ['student', 'owner'],
+        default: 'student'
+    }
 },{    timestamps:true
 });
 

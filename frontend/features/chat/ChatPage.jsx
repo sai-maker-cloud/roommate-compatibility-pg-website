@@ -1,7 +1,8 @@
-import { MessageCircle, Send, User } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
-import { getMessages } from "../../api/messages.js";
+import { MessageCircle, Send, User, ChevronLeft, Search } from "lucide-react";
+import { useEffect, useMemo, useState, useRef } from "react";
+import { useSearchParams, useNavigate, useLocation } from "react-router-dom";
+import { getConversationMessages } from "../../api/messages.js";
+import { getConversations } from "../../api/conversations.js";
 import { getSocket } from "../../api/socket.js";
 import { useAuth } from "../../auth/AuthProvider.jsx";
 import { Button } from "../../components/ui/Button.jsx";
@@ -9,52 +10,90 @@ import { Card } from "../../components/ui/Card.jsx";
 
 export const ChatPage = () => {
   const { user } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const [receiver, setReceiver] = useState(() => searchParams.get("receiver") || "");
-  const [text, setText] = useState("");
+  
+  const [conversations, setConversations] = useState([]);
+  const [activeConvId, setActiveConvId] = useState(
+    location.state?.conversationId || searchParams.get("conversationId") || null
+  );
   const [messages, setMessages] = useState([]);
+  const [text, setText] = useState("");
   const [typing, setTyping] = useState(false);
+  const [isMobileList, setIsMobileList] = useState(!activeConvId);
+  const [searchQuery, setSearchQuery] = useState("");
+  
   const socket = useMemo(() => getSocket(), []);
+  const messagesEndRef = useRef(null);
 
-  // If the URL query changes (e.g. user navigates from a different match), update receiver
-  useEffect(() => {
-    const r = searchParams.get("receiver");
-    if (r) setReceiver(r);
-  }, [searchParams]);
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
 
-  // Fetch message history when receiver changes
   useEffect(() => {
-    if (!receiver) return;
+    scrollToBottom();
+  }, [messages]);
+
+  useEffect(() => {
+    if (activeConvId) setIsMobileList(false);
+  }, [activeConvId]);
+
+  useEffect(() => {
     let mounted = true;
-    getMessages(receiver)
+    getConversations()
+      .then((data) => {
+        if (!mounted) return;
+        setConversations(data);
+      })
+      .catch((err) => console.error("Failed to load conversations:", err));
+    return () => { mounted = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!activeConvId) return;
+    let mounted = true;
+    getConversationMessages(activeConvId)
       .then((history) => {
         if (!mounted) return;
-        // Mark local as true if sender is the current user
         const formatted = history.map((m) => ({
           ...m,
           local: m.sender === (user.id || user._id)
         }));
         setMessages(formatted);
       })
-      .catch((err) => console.error("Failed to load chat history:", err));
+      .catch((err) => console.error("Failed to load messages:", err));
     return () => { mounted = false; };
-  }, [receiver, user]);
+  }, [activeConvId, user]);
 
   useEffect(() => {
-    if (!user?.id && !user?._id) return undefined;
+    if (!user?.id && !user?._id) return;
     const userId = user.id || user._id;
     socket.emit("register", userId);
+    
     const onReceiveMessage = (message) => {
-      if (message.sender === userId) return;
-      
-      // Only append if it's from the person we are currently chatting with
-      setMessages((current) => {
-        // We use function state to access latest receiver safely? No, receiver is closed over.
-        // Wait, to access latest `receiver` in useEffect without putting receiver in dependency array (which would re-bind socket),
-        // we might have a bug. Let's assume for now they get all messages or we check.
-        // Let's just append it.
-        return [...current, message];
+      // Update conversations list (bring to top, update last message)
+      setConversations(prev => {
+        const convExists = prev.find(c => c._id === message.conversation);
+        if (convExists) {
+          const updated = prev.map(c => 
+            c._id === message.conversation 
+              ? { ...c, lastMessage: message.msg, lastMessageAt: new Date().toISOString() } 
+              : c
+          );
+          return updated.sort((a, b) => new Date(b.lastMessageAt) - new Date(a.lastMessageAt));
+        } else {
+          // If new conversation, reload list
+          getConversations().then(data => setConversations(data));
+          return prev;
+        }
       });
+
+      if (message.conversation === activeConvId) {
+        if (message.sender !== userId) {
+          setMessages(current => [...current, message]);
+        }
+      }
     };
 
     const onTyping = () => {
@@ -69,114 +108,192 @@ export const ChatPage = () => {
       socket.off("receiveMessage", onReceiveMessage);
       socket.off("userTyping", onTyping);
     };
-  }, [socket, user]);
+  }, [socket, user, activeConvId]);
 
   const send = (event) => {
     event.preventDefault();
-    if (!receiver || !text.trim()) return;
+    if (!activeConvId || !text.trim()) return;
+
+    const activeConv = conversations.find(c => c._id === activeConvId);
+    if (!activeConv) return;
+    
+    // Find the other participant's ID
+    const myId = user.id || user._id;
+    const otherParticipant = activeConv.participants.find(p => (p._id || p.id || p) !== myId);
+    const receiverId = otherParticipant?._id || otherParticipant?.id || otherParticipant;
 
     const payload = {
-      sender: user.id || user._id,
-      receiver,
+      sender: myId,
+      receiver: receiverId,
       text: text.trim(),
+      conversationId: activeConvId
     };
 
     socket.emit("sendMessage", payload);
-    setMessages((current) => [...current, { ...payload, msg: payload.text, local: true }]);
+    setMessages(current => [...current, { ...payload, msg: payload.text, local: true }]);
+    
+    // Update local conversations list
+    setConversations(prev => {
+      const updated = prev.map(c => 
+        c._id === activeConvId 
+          ? { ...c, lastMessage: text.trim(), lastMessageAt: new Date().toISOString() } 
+          : c
+      );
+      return updated.sort((a, b) => new Date(b.lastMessageAt) - new Date(a.lastMessageAt));
+    });
+
     setText("");
   };
 
   const sendTyping = () => {
-    if (receiver) socket.emit("typing", { receiver });
+    const activeConv = conversations.find(c => c._id === activeConvId);
+    if (!activeConv) return;
+    const myId = user.id || user._id;
+    const otherParticipant = activeConv.participants.find(p => (p._id || p.id || p) !== myId);
+    if (otherParticipant) {
+      const receiverId = otherParticipant._id || otherParticipant.id || otherParticipant;
+      socket.emit("typing", { receiver: receiverId });
+    }
   };
 
+  const getOtherParticipantName = (conv) => {
+    const myId = user?.id || user?._id;
+    const other = conv.participants.find(p => p._id !== myId && p.id !== myId);
+    return other?.name || "Unknown User";
+  };
+
+  const filteredConversations = conversations.filter(c => 
+    getOtherParticipantName(c).toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   return (
-    <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
-      <Card className="p-5">
-        <div className="mb-5 flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-md bg-mint text-moss">
-            <MessageCircle className="h-5 w-5" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-ink">Realtime Chat</h1>
-            <p className="text-sm text-stone-600">Socket.IO live messaging</p>
-          </div>
-        </div>
-
-        <div className="space-y-3">
-          <div>
-            <span className="label">Chatting with (receiver ID)</span>
-            {receiver ? (
-              <div className="mt-1 flex items-center gap-2 rounded-md border border-stone-200 bg-mint px-3 py-2">
-                <User className="h-4 w-4 shrink-0 text-moss" />
-                <span className="truncate text-sm font-medium text-ink">{receiver}</span>
-              </div>
-            ) : (
-              <p className="mt-1 rounded-md border border-dashed border-stone-300 px-3 py-3 text-center text-sm text-stone-500">
-                No receiver selected.{" "}
-                <a href="/matches" className="font-semibold text-moss underline">
-                  Go to Matches
-                </a>{" "}
-                and click "Chat" on a match.
-              </p>
-            )}
-          </div>
-
-          <div>
-            <span className="label">Or enter receiver ID manually</span>
+    <div className="flex h-[calc(100vh-8rem)] bg-white rounded-xl shadow-sm border border-stone-200 overflow-hidden">
+      {/* Sidebar - Conversation List */}
+      <div className={`w-full md:w-80 lg:w-96 flex flex-col border-r border-stone-200 ${!isMobileList ? 'hidden md:flex' : 'flex'}`}>
+        <div className="p-4 border-b border-stone-200 bg-stone-50">
+          <h2 className="text-xl font-bold text-ink mb-4">Messages</h2>
+          <div className="relative">
             <input
-              className="field"
-              value={receiver}
-              onChange={(event) => setReceiver(event.target.value)}
-              placeholder="Paste a user ID..."
+              type="text"
+              placeholder="Search conversations..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 bg-white border border-stone-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-mint focus:border-transparent transition-all"
             />
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-stone-400" />
           </div>
         </div>
-      </Card>
 
-      <Card className="flex min-h-[520px] flex-col overflow-hidden">
-        <div className="border-b border-stone-200 px-5 py-4">
-          <h2 className="font-bold text-ink">Messages</h2>
-          {typing ? (
-            <p className="text-sm text-moss">Typing...</p>
-          ) : (
-            <p className="text-sm text-stone-500">
-              {receiver ? "Connected — send a message below." : "Select a receiver to start chatting."}
-            </p>
-          )}
-        </div>
-
-        <div className="flex-1 space-y-3 overflow-y-auto p-5">
-          {messages.length === 0 ? (
-            <div className="flex h-full items-center justify-center text-sm text-stone-500">
-              No messages in this session.
+        <div className="flex-1 overflow-y-auto">
+          {filteredConversations.length === 0 ? (
+            <div className="p-6 text-center text-stone-500 text-sm">
+              No conversations found.
             </div>
           ) : (
-            messages.map((message, index) => (
-              <div key={`${message._id || index}`} className={`flex ${message.local ? "justify-end" : "justify-start"}`}>
-                <div className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${message.local ? "bg-ink text-white" : "bg-mint text-ink"}`}>
-                  {message.msg || message.text}
-                </div>
-              </div>
-            ))
+            <div className="divide-y divide-stone-100">
+              {filteredConversations.map(conv => (
+                <button
+                  key={conv._id}
+                  onClick={() => setActiveConvId(conv._id)}
+                  className={`w-full p-4 flex items-start gap-3 hover:bg-stone-50 transition-colors text-left ${activeConvId === conv._id ? 'bg-mint/20 hover:bg-mint/20' : ''}`}
+                >
+                  <div className="h-12 w-12 rounded-full bg-mint text-moss flex items-center justify-center shrink-0 font-bold text-lg">
+                    {getOtherParticipantName(conv).charAt(0).toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex justify-between items-baseline mb-1">
+                      <h3 className="font-semibold text-ink truncate pr-2">
+                        {getOtherParticipantName(conv)}
+                      </h3>
+                      <span className="text-xs text-stone-500 shrink-0">
+                        {new Date(conv.lastMessageAt).toLocaleDateString()}
+                      </span>
+                    </div>
+                    <p className="text-sm text-stone-600 truncate">
+                      {conv.lastMessage || "Started a conversation"}
+                    </p>
+                  </div>
+                </button>
+              ))}
+            </div>
           )}
         </div>
+      </div>
 
-        <form className="grid gap-2 border-t border-stone-200 p-4 sm:grid-cols-[1fr_auto]" onSubmit={send}>
-          <input
-            className="field"
-            value={text}
-            onChange={(event) => setText(event.target.value)}
-            onKeyDown={sendTyping}
-            placeholder={receiver ? "Type a message..." : "Select a receiver first"}
-            disabled={!receiver}
-          />
-          <Button type="submit" disabled={!receiver || !text.trim()}>
-            <Send className="h-4 w-4" />
-            Send
-          </Button>
-        </form>
-      </Card>
+      {/* Main Chat Area */}
+      <div className={`flex-1 flex flex-col bg-stone-50/30 ${isMobileList ? 'hidden md:flex' : 'flex'}`}>
+        {activeConvId ? (
+          <>
+            {/* Chat Header */}
+            <div className="p-4 bg-white border-b border-stone-200 flex items-center gap-3">
+              <button 
+                className="md:hidden p-2 -ml-2 text-stone-500 hover:text-ink rounded-lg hover:bg-stone-100"
+                onClick={() => setIsMobileList(true)}
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </button>
+              <div className="h-10 w-10 rounded-full bg-mint text-moss flex items-center justify-center font-bold">
+                {getOtherParticipantName(conversations.find(c => c._id === activeConvId) || {participants: []}).charAt(0).toUpperCase()}
+              </div>
+              <div>
+                <h3 className="font-bold text-ink">
+                  {getOtherParticipantName(conversations.find(c => c._id === activeConvId) || {participants: []})}
+                </h3>
+                {typing && <p className="text-xs text-moss font-medium">typing...</p>}
+              </div>
+            </div>
+
+            {/* Chat Messages */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {messages.length === 0 ? (
+                <div className="h-full flex items-center justify-center text-stone-500 text-sm">
+                  Send a message to start the conversation.
+                </div>
+              ) : (
+                messages.map((message, index) => (
+                  <div key={message._id || index} className={`flex ${message.local ? "justify-end" : "justify-start"}`}>
+                    <div 
+                      className={`max-w-[75%] rounded-2xl px-4 py-2 text-sm shadow-sm
+                        ${message.local 
+                          ? "bg-ink text-white rounded-tr-sm" 
+                          : "bg-white border border-stone-200 text-ink rounded-tl-sm"
+                        }`}
+                    >
+                      {message.msg || message.text}
+                    </div>
+                  </div>
+                ))
+              )}
+              <div ref={messagesEndRef} />
+            </div>
+
+            {/* Chat Input */}
+            <form className="p-4 bg-white border-t border-stone-200" onSubmit={send}>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  onKeyDown={sendTyping}
+                  placeholder="Type a message..."
+                  className="flex-1 px-4 py-2 bg-stone-50 border border-stone-200 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-mint focus:border-transparent transition-all"
+                />
+                <Button type="submit" disabled={!text.trim()} className="rounded-full w-10 h-10 p-0 flex items-center justify-center">
+                  <Send className="h-4 w-4 ml-0.5" />
+                </Button>
+              </div>
+            </form>
+          </>
+        ) : (
+          <div className="hidden md:flex h-full flex-col items-center justify-center text-stone-500">
+            <div className="h-16 w-16 bg-mint rounded-full flex items-center justify-center mb-4">
+              <MessageCircle className="h-8 w-8 text-moss" />
+            </div>
+            <p className="text-lg font-medium text-ink mb-1">Your Messages</p>
+            <p className="text-sm">Select a conversation from the sidebar to start chatting</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

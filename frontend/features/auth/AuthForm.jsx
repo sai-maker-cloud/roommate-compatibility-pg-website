@@ -31,12 +31,19 @@ export const AuthForm = ({ mode }) => {
     setLoading(true);
 
     try {
+      let data;
       if (isRegister) {
-        await signUp(form);
+        data = await signUp(form);
       } else {
-        await signIn({ email: form.email, password: form.password });
+        data = await signIn({ email: form.email, password: form.password });
       }
-      navigate(location.state?.from?.pathname || "/", { replace: true });
+      
+      const role = data.user?.role || data.role;
+      if (role === "owner") {
+        navigate("/owner/dashboard", { replace: true });
+      } else {
+        navigate(location.state?.from?.pathname || "/", { replace: true });
+      }
     } catch (err) {
       setError(getApiError(err, "Authentication failed"));
     } finally {
@@ -80,10 +87,19 @@ export const AuthForm = ({ mode }) => {
 
           <form className="space-y-4" onSubmit={onSubmit}>
             {isRegister ? (
-              <label>
-                <span className="label">Name</span>
-                <input className="field" name="name" value={form.name} onChange={onChange} required />
-              </label>
+              <>
+                <label>
+                  <span className="label">Name</span>
+                  <input className="field" name="name" value={form.name} onChange={onChange} required />
+                </label>
+                <label>
+                  <span className="label">Account Type</span>
+                  <select className="field" name="role" value={form.role || "student"} onChange={onChange}>
+                    <option value="student">Student (Looking for PG)</option>
+                    <option value="owner">Owner (Listing PGs)</option>
+                  </select>
+                </label>
+              </>
             ) : null}
 
             <label>

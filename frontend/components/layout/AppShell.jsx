@@ -1,9 +1,10 @@
-import { Home, LogOut, Menu, MessageCircle, MessagesSquare, UserRound, UsersRound, X } from "lucide-react";
+import { Home, LogOut, Menu, MessageCircle, MessagesSquare, UserRound, UsersRound, X, LayoutDashboard } from "lucide-react";
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { disconnectSocket, getSocket } from "../../api/socket.js";
 import { useAuth } from "../../auth/AuthProvider.jsx";
 import { Button } from "../ui/Button.jsx";
+import NotificationBell from "../ui/NotificationBell.jsx";
 
 const navItems = [
   { to: "/", label: "PGs", icon: Home },
@@ -90,10 +91,20 @@ export const AppShell = () => {
                 {label}
               </NavLink>
             ))}
+            {user?.role === "owner" && (
+              <NavLink
+                to="/owner/dashboard"
+                className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition text-stone-600 hover:bg-white hover:text-ink"
+              >
+                <LayoutDashboard className="h-4 w-4" aria-hidden="true" />
+                Owner Dashboard
+              </NavLink>
+            )}
           </nav>
 
           <div className="hidden items-center gap-3 md:flex">
-            <span className="max-w-36 truncate text-sm text-stone-600">{user?.name}</span>
+            <NotificationBell />
+            <span className="max-w-36 truncate text-sm text-stone-600 ml-2">{user?.name}</span>
             <Button variant="ghost" onClick={logout} title="Sign out">
               <LogOut className="h-4 w-4" aria-hidden="true" />
             </Button>

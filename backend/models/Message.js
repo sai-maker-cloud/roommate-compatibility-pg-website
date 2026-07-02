@@ -5,7 +5,10 @@ const msgSchema=new mongoose.Schema({
         type:mongoose.Schema.Types.ObjectId,
         ref:'Match'
     },
-
+    conversation: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Conversation'
+    },
     sender:{
         type:mongoose.Schema.Types.ObjectId,
         ref:'User'

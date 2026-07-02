@@ -11,8 +11,11 @@ import matchRoutes from "./routes/matchRoutes.js";
 import pgRoutes from "./routes/pgRoutes.js";
 import bookingRoutes from "./routes/bookingRoutes.js";
 import messageRoutes from "./routes/messageRoutes.js";
+import notificationRoutes from "./routes/notificationRoutes.js";
+import conversationRoutes from "./routes/conversationRoutes.js";
 
 import initializeSocket from "./socket/socket.js";
+import { setBookingIO } from "./controllers/bookingController.js";
 
 dotenv.config();
 
@@ -22,7 +25,9 @@ const app = express();
 
 const server = http.createServer(app);
 
-initializeSocket(server);
+const io = initializeSocket(server);
+setBookingIO(io);
+
 
 
 
@@ -74,6 +79,16 @@ app.use(
 app.use(
   "/api/bookings",
   bookingRoutes
+);
+
+app.use(
+  "/api/notifications",
+  notificationRoutes
+);
+
+app.use(
+  "/api/conversations",
+  conversationRoutes
 );
 
 import path from "path";

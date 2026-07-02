@@ -41,3 +41,23 @@ export const getPGsByOwner = async (userId) => {
   return data.map(normalizePg);
 };
 
+export const updatePg = async (id, payload) => {
+  const { data } = await apiClient.put(`/api/pg/${id}`, payload);
+  return normalizePg(data);
+};
+
+export const deletePg = async (id) => {
+  const { data } = await apiClient.delete(`/api/pg/${id}`);
+  return data;
+};
+
+export const getDashboardStats = async () => {
+  const { data } = await apiClient.get("/api/pg/dashboard/stats");
+  return data;
+};
+
+export const ratePg = async (id, score) => {
+  const { data } = await apiClient.post(`/api/pg/${id}/rate`, { score });
+  return data;
+};
+

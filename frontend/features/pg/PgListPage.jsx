@@ -5,7 +5,6 @@ import { getPGs } from "../../api/pg.js";
 import { Button } from "../../components/ui/Button.jsx";
 import { EmptyState } from "../../components/ui/EmptyState.jsx";
 import { Stat } from "../../components/ui/Stat.jsx";
-import { AddPgForm } from "./AddPgForm.jsx";
 import { PgCard } from "./PgCard.jsx";
 
 export const PgListPage = () => {
@@ -38,7 +37,7 @@ export const PgListPage = () => {
   const availableRooms = pgs.reduce((sum, pg) => sum + Number(pg.available || 0), 0);
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[1fr_420px]">
+    <div className="max-w-6xl mx-auto">
       <section>
         <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -66,16 +65,12 @@ export const PgListPage = () => {
           <EmptyState icon={Building2} title="No PG listings found" body="Add a PG or adjust the current search." />
         ) : null}
 
-        <div className="grid gap-5 md:grid-cols-2">
+        <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
           {filtered.map((pg) => (
             <PgCard key={pg.id} pg={pg} onBooked={load} />
           ))}
         </div>
       </section>
-
-      <aside className="xl:sticky xl:top-24 xl:self-start">
-        <AddPgForm onCreated={load} />
-      </aside>
     </div>
   );
 };

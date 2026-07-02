@@ -19,7 +19,8 @@ try{
 const {
 name,
 email,
-password
+password,
+role
 }=req.body;
 
 
@@ -55,7 +56,9 @@ name,
 
 email,
 
-password:hash
+password:hash,
+
+role: role || 'student'
 
 });
 
@@ -73,7 +76,8 @@ token,
 user:{
 id:user._id,
 name:user.name,
-email:user.email
+email:user.email,
+role:user.role
 }
 
 });
@@ -150,7 +154,8 @@ token,
 
 user:{
 id:user._id,
-name:user.name
+name:user.name,
+role:user.role
 }
 
 });

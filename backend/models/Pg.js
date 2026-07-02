@@ -63,7 +63,11 @@ const pgSchema=new mongoose.Schema({
     rating:{
         type:Number,
         default:0
-    }
+    },
+    ratings: [{
+        user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        score: { type: Number, required: true, min: 1, max: 5 }
+    }]
 
 })
 export default mongoose.model('Pg',pgSchema);
